@@ -1445,3 +1445,23 @@ mod tests {
         logits
     }
 }
+
+#[cfg(test)]
+mod expanded_secret_tests {
+    use super::*;
+    #[test]
+    fn matches_synthetic_credentials_and_whole_private_key() {
+        for value in [format!("AKIA{}", "A".repeat(16)), format!("ghp_{}", "C".repeat(36)),
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.c3ludGhldGlj".into(),
+            "-----BEGIN RSA PRIVATE KEY-----\nU1lOVEhFVElD\n-----END RSA PRIVATE KEY-----".into()] {
+            let result = RegexRedactor::new().redact_sync(&value);
+            assert!(result.matches.iter().any(|m| m.kind == "secret" && m.value == value));
+        }
+    }
+    #[test]
+    fn excludes_public_keys_and_short_tokens() {
+        for value in ["ghp_short", "AKIA123", "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----"] {
+            assert!(!RegexRedactor::new().redact_sync(value).matches.iter().any(|m| m.kind == "secret"));
+        }
+    }
+}
