@@ -106,7 +106,7 @@ import {
   startNextQueuedTask,
 } from "@/lib/pii-task-queue";
 import { normalizeRustMatchOffsets } from "@/lib/pii-match-offsets";
-import { builtInRegexRules } from "@/lib/pii-rules";
+import { filterPii } from "@/lib/pii-rules";
 import {
   applyCustomRules,
   createMatchSelection,
@@ -1930,35 +1930,6 @@ function ColumnResizeHandle({
   );
 }
 
-function filterPii(input: string) {
-  const rules = builtInRegexRules();
-  const matches: PiiMatch[] = [];
-
-  for (const rule of rules) {
-    for (const [index, match] of Array.from(
-      input.matchAll(rule.regex),
-    ).entries()) {
-      const start = match.index ?? index;
-
-      matches.push({
-        id: `${rule.matchIdPrefix}-${start}-${index}`,
-        kind: rule.kind,
-        value: match[0],
-        start,
-        end: start + match[0].length,
-      });
-    }
-  }
-
-  matches.sort((a, b) => a.start - b.start);
-
-  const redactedText = rules.reduce(
-    (text, rule) => text.replace(rule.regex, rule.replacement),
-    input,
-  );
-
-  return { backend: "regex" as const, matches, redactedText };
-}
 
 async function redactText(
   input: string,
