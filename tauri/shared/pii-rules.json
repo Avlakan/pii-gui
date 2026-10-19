@@ -21,7 +21,7 @@
       "kind": "private_phone",
       "matchIdPrefix": "private-phone",
       "replacement": "[PRIVATE_PHONE]",
-      "pattern": "(?:\\+?1[\\s.-]?)?(?:\\(\\d{3}\\)|\\d{3})[\\s.-]?\\d{3}[\\s.-]?\\d{4}",
+      "pattern": "\\b01[016789][\\s.-]?\\d{3,4}[\\s.-]?\\d{4}\\b|\\b0[789]0\\d{8}\\b|(?:\\+?1[\\s.-]?)?(?:\\(\\d{3}\\)|\\d{3})[\\s.-]?\\d{3}[\\s.-]?\\d{4}|\\b0[2-9]\\d?[\\s.-]\\d{3,4}[\\s.-]\\d{4}\\b",
       "ignoreCase": false
     },
     {

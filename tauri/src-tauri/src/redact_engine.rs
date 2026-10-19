@@ -1180,6 +1180,25 @@ mod tests {
     }
 
     #[test]
+    fn regex_redacts_korean_and_japanese_phone_numbers() {
+        let engine = RedactEngine::new(RedactBackend::Regex);
+        let result = engine
+            .redact("KR mobile 010-1234-5678, KR landline 02-123-4567, JP mobile 090-1234-5678, JP landline 03-1234-5678.")
+            .expect("regex redaction should succeed");
+
+        assert_eq!(
+            result.redacted_text,
+            "KR mobile [PRIVATE_PHONE], KR landline [PRIVATE_PHONE], JP mobile [PRIVATE_PHONE], JP landline [PRIVATE_PHONE]."
+        );
+        assert_eq!(result.matches.len(), 4);
+        assert!(result.matches.iter().all(|m| m.kind == "private_phone"));
+        assert_eq!(result.matches[0].value, "010-1234-5678");
+        assert_eq!(result.matches[1].value, "02-123-4567");
+        assert_eq!(result.matches[2].value, "090-1234-5678");
+        assert_eq!(result.matches[3].value, "03-1234-5678");
+    }
+
+    #[test]
     fn regex_keeps_plain_text_unchanged() {
         let engine = RedactEngine::new(RedactBackend::Regex);
         let result = engine
