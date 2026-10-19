@@ -74,6 +74,7 @@ struct RegexRedactor {
     url: Regex,
     date: Regex,
     secret: Regex,
+    credit_card: Regex,
 }
 
 impl RegexRedactor {
@@ -84,12 +85,13 @@ impl RegexRedactor {
             url: shared_regex("private_url"),
             date: shared_regex("private_date"),
             secret: shared_regex("secret"),
+            credit_card: shared_regex("account_number"),
         }
     }
 
     fn redact_sync(&self, input: &str) -> RedactResult {
         let mut matches = self.collect_matches(input);
-        matches.sort_by_key(|pii_match| pii_match.start);
+        matches.sort_by_key(|pii_match| (pii_match.start, std::cmp::Reverse(pii_match.end)));
 
         RedactResult {
             backend: "regex".to_string(),
@@ -151,8 +153,25 @@ impl RegexRedactor {
             });
         }
 
+        for (index, found) in self.credit_card.find_iter(input).enumerate() {
+            if !valid_card(found.as_str()) { continue; }
+            matches.push(RedactMatch {
+                id: format!("credit-card-{}-{index}", found.start()),
+                kind: "account_number".into(), value: found.as_str().into(),
+                start: found.start(), end: found.end(),
+            });
+        }
         matches
     }
+}
+
+fn valid_card(value: &str) -> bool {
+    let digits: Vec<u32> = value.chars().filter_map(|c| c.to_digit(10)).collect();
+    if !(13..=19).contains(&digits.len()) || digits.iter().all(|d| *d == digits[0]) { return false; }
+    digits.iter().rev().enumerate().map(|(i, d)| {
+        let n = if i % 2 == 1 { d * 2 } else { *d };
+        if n > 9 { n - 9 } else { n }
+    }).sum::<u32>() % 10 == 0
 }
 
 impl PiiRedactor for RegexRedactor {
@@ -1443,5 +1462,23 @@ mod tests {
             logits[label_id] = score;
         }
         logits
+    }
+}
+
+#[cfg(test)]
+mod card_validation_tests {
+    use super::*;
+    #[test]
+    fn card_checksum_accepts_only_valid_non_repeated_candidates() {
+        for value in ["4111111111111111", "4111 1111 1111 1111", "378282246310005", "4000000000000000006"] { assert!(valid_card(value)); }
+        for value in ["4111111111111112", "0000000000000000", "1111111111111", "411111111111", "41111111111111111111"] { assert!(!valid_card(value)); }
+    }
+    #[test]
+    fn regex_backend_reports_full_card_span() {
+        let input = "Card: 4111 1111 1111 1111.";
+        let result = RegexRedactor::new().redact_sync(input);
+        let card = result.matches.iter().find(|m| m.kind == "account_number").unwrap();
+        assert_eq!(card.value, "4111 1111 1111 1111");
+        assert_eq!(&input[card.start..card.end], card.value);
     }
 }

@@ -44,6 +44,14 @@
       "replacement": "[SECRET]",
       "pattern": "\\bsk_[A-Za-z0-9_]{12,}\\b",
       "ignoreCase": false
+    },
+    {
+      "kind": "account_number",
+      "matchIdPrefix": "credit-card",
+      "replacement": "[ACCOUNT_NUMBER]",
+      "pattern": "\\b[0-9](?:[ -]?[0-9]){12,18}\\b",
+      "ignoreCase": false,
+      "validator": "luhn"
     }
   ]
 }
