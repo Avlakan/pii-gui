@@ -75,6 +75,7 @@ struct RegexRedactor {
     date: Regex,
     secret: Regex,
     credit_card: Regex,
+    kr_registration: Regex,
 }
 
 impl RegexRedactor {
@@ -85,7 +86,8 @@ impl RegexRedactor {
             url: shared_regex("private_url"),
             date: shared_regex("private_date"),
             secret: shared_regex("secret"),
-            credit_card: shared_regex("account_number"),
+            credit_card: shared_regex_prefix("credit-card"),
+            kr_registration: shared_regex_prefix("kr-registration"),
         }
     }
 
@@ -161,8 +163,28 @@ impl RegexRedactor {
                 start: found.start(), end: found.end(),
             });
         }
+        for (index, found) in self.kr_registration.find_iter(input).enumerate() {
+            if korean_registration_validation(found.as_str()).is_none() { continue; }
+            matches.push(RedactMatch { id: format!("kr-registration-{}-{index}", found.start()),
+                kind: "account_number".into(), value: found.as_str().into(), start: found.start(), end: found.end() });
+        }
         matches
     }
+}
+
+/// Some(true): legacy checksum; Some(false): structurally valid possible modern ID.
+/// Never discard modern randomized serials because a legacy checksum fails.
+fn korean_registration_validation(value: &str) -> Option<bool> {
+    let digits: Vec<u32> = value.chars().filter_map(|c| c.to_digit(10)).collect();
+    if digits.len() != 13 || !(1..=8).contains(&digits[6]) { return None; }
+    let gender = digits[6];
+    let year = if [1,2,5,6].contains(&gender) { 1900 } else { 2000 } + digits[0] * 10 + digits[1];
+    let month = digits[2] * 10 + digits[3]; let day = digits[4] * 10 + digits[5];
+    let days = match month { 1|3|5|7|8|10|12 => 31, 4|6|9|11 => 30,
+        2 => if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 29 } else { 28 }, _ => return None };
+    if day == 0 || day > days { return None; }
+    let sum: u32 = [2,3,4,5,6,7,8,9,2,3,4,5].iter().enumerate().map(|(i,w)| digits[i] * w).sum();
+    Some(((if gender <= 4 { 11 } else { 13 }) - sum % 11) % 10 == digits[12])
 }
 
 fn valid_card(value: &str) -> bool {
@@ -428,6 +450,17 @@ fn shared_regex_rule(kind: &str) -> &'static serde_json::Value {
 /// Compiles one shared rule into a regex, applying the rule's case flag.
 fn shared_regex(kind: &str) -> Regex {
     let rule = shared_regex_rule(kind);
+    compile_shared_regex(rule)
+}
+
+fn shared_regex_prefix(prefix: &str) -> Regex {
+    let rule = pii_rules().get("regexRules").and_then(|rules| rules.as_array()).unwrap().iter()
+        .find(|rule| rule.get("matchIdPrefix").and_then(|value| value.as_str()) == Some(prefix)).unwrap();
+    compile_shared_regex(rule)
+}
+
+fn compile_shared_regex(rule: &serde_json::Value) -> Regex {
+    let kind = rule.get("kind").and_then(|value| value.as_str()).unwrap();
     let pattern = rule
         .get("pattern")
         .and_then(|value| value.as_str())
@@ -441,6 +474,7 @@ fn shared_regex(kind: &str) -> Regex {
     } else {
         pattern.to_string()
     };
+    let source = if rule.get("matchIdPrefix").and_then(|v| v.as_str()) == Some("kr-registration") { source.replace(r"\b", r"(?-u:\b)") } else { source };
 
     Regex::new(&source).unwrap_or_else(|error| panic!("the {kind} regex must compile: {error}"))
 }
@@ -1480,5 +1514,22 @@ mod card_validation_tests {
         let card = result.matches.iter().find(|m| m.kind == "account_number").unwrap();
         assert_eq!(card.value, "4111 1111 1111 1111");
         assert_eq!(&input[card.start..card.end], card.value);
+    }
+}
+
+#[cfg(test)]
+mod kr_registration_tests {
+    use super::*;
+    #[test]
+    fn rejects_bad_dates_but_keeps_possible_randomized_serials() {
+        assert_eq!(korean_registration_validation("900101-1234560"), Some(false));
+        assert_eq!(korean_registration_validation("990229-1234567"), None);
+        assert_eq!(korean_registration_validation("000230-3123456"), None);
+        assert_eq!(korean_registration_validation("900101-9234567"), None);
+    }
+    #[test]
+    fn retains_full_registration_match() {
+        let result = RegexRedactor::new().redact_sync("ID: 9001011234560");
+        assert_eq!(result.redacted_text, "ID: [ACCOUNT_NUMBER]");
     }
 }
