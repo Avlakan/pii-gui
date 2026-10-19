@@ -1183,19 +1183,34 @@ mod tests {
     fn regex_redacts_korean_and_japanese_phone_numbers() {
         let engine = RedactEngine::new(RedactBackend::Regex);
         let result = engine
-            .redact("KR mobile 010-1234-5678, KR landline 02-123-4567, JP mobile 090-1234-5678, JP landline 03-1234-5678.")
+            .redact("KR mobile 010-1234-5678, KR landline 02-123-4567, KR intl +82 10-1234-5678, JP mobile 090-1234-5678, JP landline 03-1234-5678.")
             .expect("regex redaction should succeed");
 
         assert_eq!(
             result.redacted_text,
-            "KR mobile [PRIVATE_PHONE], KR landline [PRIVATE_PHONE], JP mobile [PRIVATE_PHONE], JP landline [PRIVATE_PHONE]."
+            "KR mobile [PRIVATE_PHONE], KR landline [PRIVATE_PHONE], KR intl [PRIVATE_PHONE], JP mobile [PRIVATE_PHONE], JP landline [PRIVATE_PHONE]."
         );
-        assert_eq!(result.matches.len(), 4);
+        assert_eq!(result.matches.len(), 5);
         assert!(result.matches.iter().all(|m| m.kind == "private_phone"));
         assert_eq!(result.matches[0].value, "010-1234-5678");
         assert_eq!(result.matches[1].value, "02-123-4567");
-        assert_eq!(result.matches[2].value, "090-1234-5678");
-        assert_eq!(result.matches[3].value, "03-1234-5678");
+        assert_eq!(result.matches[2].value, "+82 10-1234-5678");
+        assert_eq!(result.matches[3].value, "090-1234-5678");
+        assert_eq!(result.matches[4].value, "03-1234-5678");
+    }
+
+    #[test]
+    fn regex_phone_rule_ignores_longer_digit_identifiers() {
+        let engine = RedactEngine::new(RedactBackend::Regex);
+        let result = engine
+            .redact("RRN 900101-1234560, JP id 123456789018, member 123456789012.")
+            .expect("regex redaction should succeed");
+
+        assert_eq!(
+            result.redacted_text,
+            "RRN 900101-1234560, JP id 123456789018, member 123456789012."
+        );
+        assert!(result.matches.is_empty());
     }
 
     #[test]
