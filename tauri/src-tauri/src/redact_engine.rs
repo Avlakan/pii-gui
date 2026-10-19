@@ -76,6 +76,9 @@ struct RegexRedactor {
     secret: Regex,
     credit_card: Regex,
     kr_registration: Regex,
+    jp_my_number: Regex,
+    jp_corporate: Regex,
+    jp_postal: Regex,
 }
 
 impl RegexRedactor {
@@ -88,6 +91,9 @@ impl RegexRedactor {
             secret: shared_regex("secret"),
             credit_card: shared_regex_prefix("credit-card"),
             kr_registration: shared_regex_prefix("kr-registration"),
+            jp_my_number: shared_regex_prefix("jp-my-number"),
+            jp_corporate: shared_regex_prefix("jp-corporate"),
+            jp_postal: shared_regex_prefix("jp-postal"),
         }
     }
 
@@ -168,8 +174,29 @@ impl RegexRedactor {
             matches.push(RedactMatch { id: format!("kr-registration-{}-{index}", found.start()),
                 kind: "account_number".into(), value: found.as_str().into(), start: found.start(), end: found.end() });
         }
+        for (regex, prefix, kind) in [(&self.jp_my_number, "jp-my-number", "account_number"), (&self.jp_corporate, "jp-corporate", "account_number"), (&self.jp_postal, "jp-postal", "private_address")] {
+            for (index, found) in regex.find_iter(input).enumerate() {
+                if prefix != "jp-postal" && (Regex::new(r"[0-9][ -]$").unwrap().is_match(&input[..found.start()]) || Regex::new(r"^[ -][0-9]").unwrap().is_match(&input[found.end()..])) { continue; }
+                if prefix != "jp-postal" && !japanese_number_valid(found.as_str(), prefix == "jp-my-number") { continue; }
+                matches.push(RedactMatch { id: format!("{prefix}-{}-{index}", found.start()), kind: kind.into(),
+                    value: found.as_str().into(), start: found.start(), end: found.end() });
+            }
+        }
         matches
     }
+}
+
+fn japanese_number_valid(value: &str, individual: bool) -> bool {
+    let d: Vec<u32> = value.chars().filter_map(|c| c.to_digit(10)).collect();
+    if d.is_empty() || d.iter().all(|x| *x == d[0]) { return false; }
+    if individual {
+        if d.len() != 12 { return false; }
+        let sum: u32 = [6,5,4,3,2,7,6,5,4,3,2].iter().enumerate().map(|(i,w)| d[i]*w).sum();
+        let rem = sum % 11; return d[11] == if rem <= 1 { 0 } else { 11 - rem };
+    }
+    if d.len() != 13 || d[0] == 0 { return false; }
+    let sum: u32 = d[1..].iter().rev().enumerate().map(|(i,n)| n * if i % 2 == 0 { 1 } else { 2 }).sum();
+    d[0] == 9 - sum % 9
 }
 
 /// Some(true): legacy checksum; Some(false): structurally valid possible modern ID.
@@ -474,7 +501,7 @@ fn compile_shared_regex(rule: &serde_json::Value) -> Regex {
     } else {
         pattern.to_string()
     };
-    let source = if rule.get("matchIdPrefix").and_then(|v| v.as_str()) == Some("kr-registration") { source.replace(r"\b", r"(?-u:\b)") } else { source };
+    let source = if rule.get("matchIdPrefix").and_then(|v| v.as_str()).is_some_and(|p| p == "kr-registration" || p.starts_with("jp-")) { source.replace(r"\b", r"(?-u:\b)") } else { source };
 
     Regex::new(&source).unwrap_or_else(|error| panic!("the {kind} regex must compile: {error}"))
 }
@@ -1531,5 +1558,23 @@ mod kr_registration_tests {
     fn retains_full_registration_match() {
         let result = RegexRedactor::new().redact_sync("ID: 9001011234560");
         assert_eq!(result.redacted_text, "ID: [ACCOUNT_NUMBER]");
+    }
+}
+
+#[cfg(test)]
+mod jp_number_tests {
+    use super::*;
+    #[test]
+    fn check_digit_vectors() {
+        assert!(japanese_number_valid("123456789018", true));
+        assert!(!japanese_number_valid("123456789019", true));
+        assert!(japanese_number_valid("8700110005901", false));
+        assert!(!japanese_number_valid("1700110005901", false));
+    }
+    #[test]
+    fn japanese_text_adjacency() {
+        let result = RegexRedactor::new().redact_sync("番号123456789018です。〒123-4567");
+        assert!(result.matches.iter().any(|m| m.id.starts_with("jp-my-number")));
+        assert!(result.matches.iter().any(|m| m.kind == "private_address"));
     }
 }
