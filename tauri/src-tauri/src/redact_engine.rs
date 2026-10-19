@@ -1576,6 +1576,7 @@ mod jp_number_tests {
         let result = RegexRedactor::new().redact_sync("番号123456789018です。〒123-4567");
         assert!(result.matches.iter().any(|m| m.id.starts_with("jp-my-number")));
         assert!(result.matches.iter().any(|m| m.kind == "private_address"));
+    }
 }
 
 #[cfg(test)]
