@@ -105,6 +105,7 @@ import {
   type PiiTaskRecord,
   startNextQueuedTask,
 } from "@/lib/pii-task-queue";
+import { normalizeRustMatchOffsets } from "@/lib/pii-match-offsets";
 import { builtInRegexRules } from "@/lib/pii-rules";
 import {
   applyCustomRules,
@@ -1964,10 +1965,18 @@ async function redactText(
   backend: PiiBackend = "regex",
 ): Promise<RedactResult> {
   if (window.__TAURI_INTERNALS__) {
-    return invoke<RedactResult>("redact_text", {
+    const result = await invoke<RedactResult>("redact_text", {
       input,
       backend,
     });
+
+    // Rust reports match offsets in UTF-8 bytes; the rest of the app slices
+    // JS strings by UTF-16 code units, so convert before chunk offsets are
+    // added downstream.
+    return {
+      ...result,
+      matches: normalizeRustMatchOffsets(input, result.matches),
+    };
   }
 
   return filterPii(input);
