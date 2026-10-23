@@ -15,7 +15,7 @@ export type PiiRegexRule = {
   pattern: string;
   /** Whether the rule matches case-insensitively. */
   ignoreCase: boolean;
-  validator?: "luhn" | "kr_registration";
+  validator?: "luhn" | "kr_registration" | "jp_my_number" | "jp_corporate";
 };
 
 export type PiiRules = {
@@ -48,12 +48,20 @@ export function validBuiltInMatch(
 ) {
   if (!rule.validator) return true;
   if (
+    rule.validator.startsWith("jp_") &&
+    (/[0-9][ -]$/.test(input.slice(0, start)) ||
+      /^[ -][0-9]/.test(input.slice(start + value.length)))
+  )
+    return false;
+  if (
     /[0-9]/.test(input[start - 1] ?? "") ||
     /[0-9]/.test(input[start + value.length] ?? "")
   )
     return false;
   if (rule.validator === "kr_registration")
     return koreanRegistrationValidation(value) !== "invalid";
+  if (rule.validator === "jp_my_number" || rule.validator === "jp_corporate")
+    return japaneseNumberValid(value, rule.validator);
   const digits = value.replace(/[ -]/g, "");
   if (!/^[0-9]{13,19}$/.test(digits) || /^([0-9])\1+$/.test(digits))
     return false;
@@ -136,4 +144,29 @@ export function koreanRegistrationValidation(
   return expected === Number(digits[12])
     ? "legacy-checksum"
     : "possible-modern";
+}
+
+/** My Number: mod 11, last digit. Corporate Number: mod 9, first digit.
+ * Corporate source: https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf
+ * My Number weights: https://qiita.com/yumetodo/items/600ca0df422010cbc4c1
+ * A check digit validates structure, not issuance.
+ */
+export function japaneseNumberValid(
+  value: string,
+  kind: "jp_my_number" | "jp_corporate",
+) {
+  const digits = value.replace(/[ -]/g, "");
+  if (!/^[0-9]+$/.test(digits) || /^([0-9])\1+$/.test(digits)) return false;
+  if (kind === "jp_my_number") {
+    if (digits.length !== 12) return false;
+    const weights = [6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    const remainder =
+      weights.reduce((sum, w, i) => sum + Number(digits[i]) * w, 0) % 11;
+    return Number(digits[11]) === (remainder <= 1 ? 0 : 11 - remainder);
+  }
+  if (digits.length !== 13 || digits[0] === "0") return false;
+  const sum = [...digits.slice(1)]
+    .reverse()
+    .reduce((sum, d, i) => sum + Number(d) * (i % 2 === 0 ? 1 : 2), 0);
+  return Number(digits[0]) === 9 - (sum % 9);
 }
