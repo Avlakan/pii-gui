@@ -33,6 +33,17 @@ it.each([
 ])("rejects malformed date or gender %s", (value) => {
   expect(koreanRegistrationValidation(value)).toBe("invalid");
 });
+it.each([
+  ["900231123456", "checksum-valid 31 February"],
+  ["000229123456", "29 February 1900, not a leap year"],
+] as const)("rejects impossible calendar dates: %s (%s)", (prefix) => {
+  expect(koreanRegistrationValidation(synthetic(prefix))).toBe("invalid");
+});
+it("accepts 29 February on leap years", () => {
+  expect(koreanRegistrationValidation(synthetic("000229323456"))).toBe(
+    "legacy-checksum",
+  );
+});
 it("keeps a complete identity span ahead of a shorter phone overlap", () => {
   expect(filterPii("ID: 9001011234560").redactedText).toBe(
     "ID: [ACCOUNT_NUMBER]",

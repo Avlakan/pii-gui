@@ -26,8 +26,17 @@ it("requires the postal symbol and does not treat an arbitrary 3-4 run as an add
     filterPii("〒123-4567").matches.some((m) => m.kind === "private_address"),
   ).toBe(true);
   expect(
+    filterPii("〒1234567").matches.some((m) => m.kind === "private_address"),
+  ).toBe(true);
+  expect(
     filterPii("123-4567").matches.some((m) => m.kind === "private_address"),
   ).toBe(false);
+});
+it("worked My Number check-digit example", () => {
+  // 12345678901: 1*6 + 2*5 + 3*4 + 4*3 + 5*2 + 6*7 + 7*6 + 8*5 + 9*4 + 0*3 + 1*2
+  // = 212, 212 % 11 = 3, so the check digit is 11 - 3 = 8 -> 123456789018.
+  expect(japaneseNumberValid("123456789018", "jp_my_number")).toBe(true);
+  expect(japaneseNumberValid("123456789019", "jp_my_number")).toBe(false);
 });
 it("rejects repeated placeholders", () =>
   expect(japaneseNumberValid("000000000000", "jp_my_number")).toBe(false));

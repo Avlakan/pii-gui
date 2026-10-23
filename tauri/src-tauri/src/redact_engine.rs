@@ -162,7 +162,7 @@ impl RegexRedactor {
         }
 
         for (index, found) in self.credit_card.find_iter(input).enumerate() {
-            if !valid_card(found.as_str()) { continue; }
+            if !valid_card(found.as_str()) || !isolated_digits(input, found.start(), found.end()) { continue; }
             matches.push(RedactMatch {
                 id: format!("credit-card-{}-{index}", found.start()),
                 kind: "account_number".into(), value: found.as_str().into(),
@@ -184,6 +184,14 @@ impl RegexRedactor {
         }
         matches
     }
+}
+
+/// Reject a candidate that sits inside a longer digit run, mirroring the
+/// browser-side check so both backends accept exactly the same cards.
+fn isolated_digits(input: &str, start: usize, end: usize) -> bool {
+    let before = input[..start].chars().next_back();
+    let after = input[end..].chars().next();
+    !before.is_some_and(|c| c.is_ascii_digit()) && !after.is_some_and(|c| c.is_ascii_digit())
 }
 
 fn japanese_number_valid(value: &str, individual: bool) -> bool {
@@ -1260,6 +1268,40 @@ mod tests {
     }
 
     #[test]
+    fn regex_redacts_korean_and_japanese_phone_numbers() {
+        let engine = RedactEngine::new(RedactBackend::Regex);
+        let result = engine
+            .redact("KR mobile 010-1234-5678, KR landline 02-123-4567, KR intl +82 10-1234-5678, JP mobile 090-1234-5678, JP landline 03-1234-5678.")
+            .expect("regex redaction should succeed");
+
+        assert_eq!(
+            result.redacted_text,
+            "KR mobile [PRIVATE_PHONE], KR landline [PRIVATE_PHONE], KR intl [PRIVATE_PHONE], JP mobile [PRIVATE_PHONE], JP landline [PRIVATE_PHONE]."
+        );
+        assert_eq!(result.matches.len(), 5);
+        assert!(result.matches.iter().all(|m| m.kind == "private_phone"));
+        assert_eq!(result.matches[0].value, "010-1234-5678");
+        assert_eq!(result.matches[1].value, "02-123-4567");
+        assert_eq!(result.matches[2].value, "+82 10-1234-5678");
+        assert_eq!(result.matches[3].value, "090-1234-5678");
+        assert_eq!(result.matches[4].value, "03-1234-5678");
+    }
+
+    #[test]
+    fn regex_phone_rule_ignores_longer_digit_identifiers() {
+        let engine = RedactEngine::new(RedactBackend::Regex);
+        let result = engine
+            .redact("RRN 900101-1234560, JP id 123456789018, member 123456789012.")
+            .expect("regex redaction should succeed");
+
+        assert_eq!(
+            result.redacted_text,
+            "RRN 900101-1234560, JP id 123456789018, member 123456789012."
+        );
+        assert!(result.matches.is_empty());
+    }
+
+    #[test]
     fn regex_keeps_plain_text_unchanged() {
         let engine = RedactEngine::new(RedactBackend::Regex);
         let result = engine
@@ -1535,6 +1577,14 @@ mod card_validation_tests {
         for value in ["4111111111111112", "0000000000000000", "1111111111111", "411111111111", "41111111111111111111"] { assert!(!valid_card(value)); }
     }
     #[test]
+    fn regex_backend_rejects_card_inside_longer_digit_run() {
+        for input in ["94111111111111111", "94111 1111 1111 1111", "41111111111111112", "id 941111111111111111 end"] {
+            let result = RegexRedactor::new().redact_sync(input);
+            assert!(result.matches.iter().all(|m| m.kind != "account_number"), "{input}");
+        }
+    }
+
+    #[test]
     fn regex_backend_reports_full_card_span() {
         let input = "Card: 4111 1111 1111 1111.";
         let result = RegexRedactor::new().redact_sync(input);
@@ -1553,6 +1603,9 @@ mod kr_registration_tests {
         assert_eq!(korean_registration_validation("990229-1234567"), None);
         assert_eq!(korean_registration_validation("000230-3123456"), None);
         assert_eq!(korean_registration_validation("900101-9234567"), None);
+        assert_eq!(korean_registration_validation("900231-1234567"), None);
+        assert_eq!(korean_registration_validation("000229-1234568"), None);
+        assert_eq!(korean_registration_validation("000229-3234563"), Some(true));
     }
     #[test]
     fn retains_full_registration_match() {
@@ -1575,6 +1628,11 @@ mod jp_number_tests {
     fn japanese_text_adjacency() {
         let result = RegexRedactor::new().redact_sync("番号123456789018です。〒123-4567");
         assert!(result.matches.iter().any(|m| m.id.starts_with("jp-my-number")));
+        assert!(result.matches.iter().any(|m| m.kind == "private_address"));
+        // 1*6 + 2*5 + 3*4 + 4*3 + 5*2 + 6*7 + 7*6 + 8*5 + 9*4 + 0*3 + 1*2 = 212,
+        // 212 % 11 = 3, so the check digit is 11 - 3 = 8 -> 123456789018.
+        assert!(japanese_number_valid("123456789018", true));
+        let result = RegexRedactor::new().redact_sync("〒1234567");
         assert!(result.matches.iter().any(|m| m.kind == "private_address"));
     }
 }

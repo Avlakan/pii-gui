@@ -20,6 +20,15 @@ describe("credit card candidates", () => {
   ])("rejects %s", (value) => {
     expect(validBuiltInMatch(rule, value, value, 0)).toBe(false);
   });
+  it("does not mask a card-shaped prefix of a longer digit run", () => {
+    expect(filterPii("id 94111111111111111").redactedText).toBe(
+      "id 94111111111111111",
+    );
+    expect(filterPii("id 41111111111111112").redactedText).toBe(
+      "id 41111111111111112",
+    );
+  });
+
   it("does not accept a substring inside a longer digit run", () => {
     expect(
       validBuiltInMatch(rule, "4111111111111111", "94111111111111111", 1),
