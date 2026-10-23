@@ -2155,6 +2155,8 @@ function App() {
   const [rulePendingDeleteId, setRulePendingDeleteId] = useState<
     string | null
   >(null);
+  const rulePendingDelete =
+    customRules.find((rule) => rule.id === rulePendingDeleteId) ?? null;
   const [customRuleMode, setCustomRuleMode] =
     useState<PiiCustomRule["mode"]>("exact");
   const [customRuleName, setCustomRuleName] = useState("Custom");
@@ -5111,6 +5113,9 @@ function App() {
           <DialogHeader>
             <DialogTitle>{copy.settings.deleteRuleConfirmTitle}</DialogTitle>
             <DialogDescription>
+              <span className="mb-1 block break-all font-mono text-sm text-foreground">
+                {rulePendingDelete?.name}
+              </span>
               {copy.settings.deleteRuleConfirmDescription}
             </DialogDescription>
           </DialogHeader>
