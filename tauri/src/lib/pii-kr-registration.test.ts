@@ -36,7 +36,7 @@ it.each([
 it.each([
   ["900231123456", "checksum-valid 31 February"],
   ["000229123456", "29 February 1900, not a leap year"],
-] as const)("rejects impossible calendar dates: %s (%s)", (prefix) => {
+] as const)("rejects impossible calendar dates: %s (%s)", (prefix, _label) => {
   expect(koreanRegistrationValidation(synthetic(prefix))).toBe("invalid");
 });
 it("accepts 29 February on leap years", () => {
