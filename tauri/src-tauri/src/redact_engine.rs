@@ -1294,11 +1294,17 @@ mod tests {
             .redact("RRN 900101-1234560, JP id 123456789018, member 123456789012.")
             .expect("regex redaction should succeed");
 
+        // The RRN and the My Number belong to their own account_number rules,
+        // so the phone rule must not claim any part of them, and the 12-digit
+        // serial that fails the My Number check digit must stay untouched.
         assert_eq!(
             result.redacted_text,
-            "RRN 900101-1234560, JP id 123456789018, member 123456789012."
+            "RRN [ACCOUNT_NUMBER], JP id [ACCOUNT_NUMBER], member 123456789012."
         );
-        assert!(result.matches.is_empty());
+        assert_eq!(result.matches.len(), 2);
+        assert!(result.matches.iter().all(|m| m.kind == "account_number"));
+        assert_eq!(result.matches[0].value, "900101-1234560");
+        assert_eq!(result.matches[1].value, "123456789018");
     }
 
     #[test]
