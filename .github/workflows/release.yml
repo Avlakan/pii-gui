@@ -96,11 +96,11 @@ jobs:
             | --- | --- |
             | Windows x64 | `PII.GUI_0.1.3_x64-setup.exe`, `PII.GUI_0.1.3_x64_en-US.msi` |
             | macOS Apple Silicon | `PII.GUI_0.1.3_aarch64.dmg` |
-                        | Linux x64 | `PII.GUI_0.1.3_amd64.deb`, `PII.GUI_0.1.3_amd64.AppImage`, `PII.GUI-0.1.3-1.x86_64.rpm` |
+            | Linux x64 | `PII.GUI_0.1.3_amd64.deb`, `PII.GUI_0.1.3_amd64.AppImage`, `PII.GUI-0.1.3-1.x86_64.rpm` |
 
             macOS builds are Apple Silicon only: the ONNX Runtime build this app links has no prebuilt x86_64 macOS binary, so no Intel dmg is produced.
 
-The builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn on first launch.
+            The builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn on first launch.
 
             ### Changes since v0.1.2
 
