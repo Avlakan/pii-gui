@@ -9,8 +9,11 @@ import {
   deterministicIndexId,
   formatRedactedText,
   mergePiiMatches,
+  removeCustomRule,
   replacementLabel,
   restorePiiText,
+  updateCustomRule,
+  type PiiCustomRule,
   type PiiMatch,
 } from "./redaction-policy";
 
@@ -263,5 +266,46 @@ describe("redaction policy", () => {
     expect(
       segments.filter((segment) => segment.matches.length > 0),
     ).toHaveLength(1);
+  });
+});
+
+describe("custom rule editing", () => {
+  const rules: PiiCustomRule[] = [
+    { id: "rule-1", name: "Token", mode: "exact", pattern: "secret-token" },
+    { id: "rule-2", name: "Code", mode: "regex", pattern: "ABC-\\d+" },
+  ];
+
+  it("updates name, mode and pattern of the matching rule, keeping its id", () => {
+    const next = updateCustomRule(rules, "rule-1", {
+      name: "Renamed",
+      mode: "regex",
+      pattern: "token-\\d+",
+    });
+
+    expect(next).toEqual([
+      { id: "rule-1", name: "Renamed", mode: "regex", pattern: "token-\\d+" },
+      { id: "rule-2", name: "Code", mode: "regex", pattern: "ABC-\\d+" },
+    ]);
+    expect(next[0].id).toBe("rule-1");
+  });
+
+  it("leaves other rules untouched and returns a new array", () => {
+    const next = updateCustomRule(rules, "rule-2", { name: "Code v2" });
+
+    expect(next).not.toBe(rules);
+    expect(next[0]).toBe(rules[0]);
+    expect(next[1]).toEqual({ ...rules[1], name: "Code v2" });
+  });
+
+  it("returns the same collection when the rule id is unknown", () => {
+    expect(updateCustomRule(rules, "missing", { name: "X" })).toBe(rules);
+  });
+
+  it("removes the rule with the given id, keeping the others in order", () => {
+    expect(removeCustomRule(rules, "rule-1")).toEqual([rules[1]]);
+  });
+
+  it("returns the same collection when removing an unknown id", () => {
+    expect(removeCustomRule(rules, "missing")).toBe(rules);
   });
 });
