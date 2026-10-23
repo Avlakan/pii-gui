@@ -15,7 +15,7 @@ export type PiiRegexRule = {
   pattern: string;
   /** Whether the rule matches case-insensitively. */
   ignoreCase: boolean;
-  validator?: "luhn";
+  validator?: "luhn" | "kr_registration";
 };
 
 export type PiiRules = {
@@ -52,6 +52,8 @@ export function validBuiltInMatch(
     /[0-9]/.test(input[start + value.length] ?? "")
   )
     return false;
+  if (rule.validator === "kr_registration")
+    return koreanRegistrationValidation(value) !== "invalid";
   const digits = value.replace(/[ -]/g, "");
   if (!/^[0-9]{13,19}$/.test(digits) || /^([0-9])\1+$/.test(digits))
     return false;
@@ -95,10 +97,43 @@ export function filterPii(input: string) {
   let cursor = 0;
   for (const match of matches) {
     if (match.start < cursor) continue;
-    redactedText += input.slice(cursor, match.start) + `[${match.kind.toUpperCase()}]`;
+    redactedText +=
+      input.slice(cursor, match.start) + `[${match.kind.toUpperCase()}]`;
     cursor = match.end;
   }
   redactedText += input.slice(cursor);
 
   return { backend: "regex" as const, matches, redactedText };
+}
+
+/** Legacy checksums are evidence, not a veto: newer IDs use random serials.
+ * See Presidio KrRrnRecognizer/KrFrnRecognizer for the legacy weights and fallback.
+ */
+export function koreanRegistrationValidation(
+  value: string,
+): "legacy-checksum" | "possible-modern" | "invalid" {
+  if (!/^[0-9]{6}-?[1-8][0-9]{6}$/.test(value)) return "invalid";
+  const digits = value.replace(/-/g, "");
+  const gender = Number(digits[6]);
+  const year =
+    (gender === 1 || gender === 2 || gender === 5 || gender === 6
+      ? 1900
+      : 2000) + Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const day = Number(digits.slice(4, 6));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  )
+    return "invalid";
+  const sum = [2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5].reduce(
+    (sum, weight, i) => sum + Number(digits[i]) * weight,
+    0,
+  );
+  const expected = ((gender <= 4 ? 11 : 13) - (sum % 11)) % 10;
+  return expected === Number(digits[12])
+    ? "legacy-checksum"
+    : "possible-modern";
 }
