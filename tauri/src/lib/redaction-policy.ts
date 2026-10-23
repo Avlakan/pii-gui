@@ -303,3 +303,24 @@ function customMatch(
 function compareMatches(a: PiiMatch, b: PiiMatch) {
   return a.start - b.start || a.end - b.end || a.id.localeCompare(b.id);
 }
+
+export function updateCustomRule(
+  rules: PiiCustomRule[],
+  ruleId: string,
+  patch: Partial<Pick<PiiCustomRule, "name" | "mode" | "pattern">>,
+): PiiCustomRule[] {
+  const index = rules.findIndex((rule) => rule.id === ruleId);
+  if (index === -1) return rules;
+
+  return rules.map((rule, at) => (at === index ? { ...rule, ...patch } : rule));
+}
+
+export function removeCustomRule(
+  rules: PiiCustomRule[],
+  ruleId: string,
+): PiiCustomRule[] {
+  const index = rules.findIndex((rule) => rule.id === ruleId);
+  if (index === -1) return rules;
+
+  return rules.filter((rule) => rule.id !== ruleId);
+}

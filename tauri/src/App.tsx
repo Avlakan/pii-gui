@@ -116,9 +116,11 @@ import {
   createRestoredTextSegments,
   formatRedactedText,
   mergePiiMatches,
+  removeCustomRule,
   replacementLabel,
   restorePiiText,
   selectedPiiMatches,
+  updateCustomRule,
   type PiiCustomRule,
   type PiiIndexFormat,
   type PiiMatch,
@@ -488,6 +490,38 @@ function customRuleSourceLabel(rule: PiiCustomRule, copy: UiCopy) {
     : copy.settings.user;
 }
 
+function ruleDialogCopy(
+  editing: boolean,
+  view: "manual" | "aiPurpose" | "aiPrompt",
+  copy: UiCopy,
+) {
+  if (editing) {
+    return {
+      title: copy.dialogs.editPiiRule,
+      description: copy.dialogs.editPiiRuleDescription,
+    };
+  }
+
+  if (view === "manual") {
+    return {
+      title: copy.dialogs.addPiiRule,
+      description: copy.dialogs.addPiiRuleDescription,
+    };
+  }
+
+  if (view === "aiPurpose") {
+    return {
+      title: copy.dialogs.createRuleWithAi,
+      description: copy.dialogs.createRuleWithAiDescription,
+    };
+  }
+
+  return {
+    title: copy.dialogs.createRuleWithAi,
+    description: copy.dialogs.aiPromptDescription,
+  };
+}
+
 function piiKindDisplayLabel(kind: string) {
   const formatted = kind
     .split(/[_\s-]+/)
@@ -821,7 +855,9 @@ function SettingsPage({
   onCheckAppUpdate,
   onClearLocalData,
   onDeleteModel,
+  onDeleteRule,
   onDownloadModel,
+  onEditRule,
   onInstallAppUpdate,
   onOpenOnboarding,
   onRefreshModelStatus,
@@ -849,6 +885,8 @@ function SettingsPage({
     Record<Exclude<PiiModelId, "regex">, ModelLifecycleStatus>
   >;
   onAddRule: () => void;
+  onDeleteRule: (rule: PiiCustomRule) => void;
+  onEditRule: (rule: PiiCustomRule) => void;
   onBack: () => void;
   onCheckAppUpdate: () => void;
   onClearLocalData?: () => void;
@@ -1228,7 +1266,27 @@ function SettingsPage({
                           {customRuleSourceLabel(rule, copy)}
                         </div>
                       </div>
-                      <Badge variant="secondary">{rule.mode}</Badge>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Badge variant="secondary">{rule.mode}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`${copy.settings.editRule}: ${rule.name}`}
+                          onClick={() => onEditRule(rule)}
+                        >
+                          <Pencil aria-hidden="true" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`${copy.settings.deleteRule}: ${rule.name}`}
+                          onClick={() => onDeleteRule(rule)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </Button>
+                      </div>
                     </div>
                     <code className="block overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
                       {rule.pattern}
@@ -2093,6 +2151,10 @@ function App() {
   const [customRules, setCustomRules] =
     useState<PiiCustomRule[]>(defaultCustomRules);
   const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [rulePendingDeleteId, setRulePendingDeleteId] = useState<
+    string | null
+  >(null);
   const [customRuleMode, setCustomRuleMode] =
     useState<PiiCustomRule["mode"]>("exact");
   const [customRuleName, setCustomRuleName] = useState("Custom");
@@ -2580,12 +2642,40 @@ function App() {
     setPendingDocuments(documents);
   }
 
-  function openRuleDialog() {
+  function resetRuleDraft() {
     setCustomRuleName(copy.settings.custom);
+    setCustomRuleMode("exact");
+    setCustomRulePattern("");
     setRuleDialogView("manual");
     setAiRulePurpose("");
     setAiRuleExamples("");
+  }
+
+  function openRuleDialog() {
+    setEditingRuleId(null);
+    resetRuleDraft();
     setIsRuleDialogOpen(true);
+  }
+
+  function openEditRuleDialog(rule: PiiCustomRule) {
+    setEditingRuleId(rule.id);
+    resetRuleDraft();
+    setCustomRuleName(rule.name);
+    setCustomRuleMode(rule.mode);
+    setCustomRulePattern(rule.pattern);
+    setIsRuleDialogOpen(true);
+  }
+
+  function requestDeleteRule(rule: PiiCustomRule) {
+    setRulePendingDeleteId(rule.id);
+  }
+
+  function confirmDeleteRule() {
+    if (rulePendingDeleteId == null) return;
+    setCustomRules((currentRules) =>
+      removeCustomRule(currentRules, rulePendingDeleteId),
+    );
+    setRulePendingDeleteId(null);
   }
 
   async function handleDroppedPaths(paths: string[]) {
@@ -2898,7 +2988,7 @@ function App() {
     });
   }
 
-  function addCustomRule() {
+  function saveCustomRule() {
     const pattern = customRulePattern.trim();
     const name = customRuleName.trim() || copy.settings.custom;
     if (!pattern) return;
@@ -2913,16 +3003,23 @@ function App() {
     }
 
     setCustomRules((currentRules) =>
-      currentRules.concat({
-        id: `rule-${Date.now()}-${currentRules.length + 1}`,
-        name,
-        mode: customRuleMode,
-        pattern,
-      }),
+      editingRuleId == null
+        ? currentRules.concat({
+            id: `rule-${Date.now()}-${currentRules.length + 1}`,
+            name,
+            mode: customRuleMode,
+            pattern,
+          })
+        : updateCustomRule(currentRules, editingRuleId, {
+            name,
+            mode: customRuleMode,
+            pattern,
+          }),
     );
     setCustomRuleName(copy.settings.custom);
     setCustomRulePattern("");
     setCustomRuleMode("exact");
+    setEditingRuleId(null);
     setIsRuleDialogOpen(false);
   }
 
@@ -3835,6 +3932,8 @@ function App() {
           downloadStatuses={modelDownloadStatuses}
           modelLifecycleStatuses={modelLifecycleStatuses}
           onAddRule={openRuleDialog}
+          onDeleteRule={requestDeleteRule}
+          onEditRule={openEditRuleDialog}
           onBack={() => navigate("/")}
           onCheckAppUpdate={() => {
             void appUpdater.checkForUpdates();
@@ -4812,22 +4911,21 @@ function App() {
 
       <Dialog open={isRuleDialogOpen} onOpenChange={setIsRuleDialogOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {ruleDialogView === "manual"
-                ? copy.dialogs.addPiiRule
-                : copy.dialogs.createRuleWithAi}
-            </DialogTitle>
-            <DialogDescription>
-              {ruleDialogView === "manual"
-                ? copy.dialogs.addPiiRuleDescription
-                : ruleDialogView === "aiPurpose"
-                  ? copy.dialogs.createRuleWithAiDescription
-                  : copy.dialogs.aiPromptDescription}
-            </DialogDescription>
-          </DialogHeader>
-          {ruleDialogView === "manual" ? (
-          <div className="space-y-4">
+          {(() => {
+            const { title, description } = ruleDialogCopy(
+              editingRuleId != null,
+              ruleDialogView,
+              copy,
+            );
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{title}</DialogTitle>
+                  <DialogDescription>{description}</DialogDescription>
+                </DialogHeader>
+                {ruleDialogView === "manual" ? (
+                <div className="space-y-4">
+            {editingRuleId == null ? (
             <Button
               type="button"
               variant="outline"
@@ -4837,6 +4935,7 @@ function App() {
               <Sparkles aria-hidden="true" />
               {copy.dialogs.createWithAi}
             </Button>
+            ) : null}
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="custom-rule-name">
                 {copy.dialogs.label}
@@ -4956,9 +5055,11 @@ function App() {
                 <Button
                   type="button"
                   disabled={!customRulePattern.trim()}
-                  onClick={addCustomRule}
+                  onClick={saveCustomRule}
                 >
-                  {copy.dialogs.addRule}
+                  {editingRuleId != null
+                    ? copy.dialogs.saveRule
+                    : copy.dialogs.addRule}
                 </Button>
               </>
             ) : ruleDialogView === "aiPurpose" ? (
@@ -4993,6 +5094,38 @@ function App() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rulePendingDeleteId != null}
+        onOpenChange={(open) => {
+          if (!open) setRulePendingDeleteId(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{copy.settings.deleteRuleConfirmTitle}</DialogTitle>
+            <DialogDescription>
+              {copy.settings.deleteRuleConfirmDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRulePendingDeleteId(null)}
+            >
+              {copy.dialogs.cancel}
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmDeleteRule}>
+              <Trash2 aria-hidden="true" />
+              {copy.settings.deleteRule}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
