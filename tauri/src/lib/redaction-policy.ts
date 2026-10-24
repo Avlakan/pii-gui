@@ -315,6 +315,28 @@ export function updateCustomRule(
   return rules.map((rule, at) => (at === index ? { ...rule, ...patch } : rule));
 }
 
+/** The rule that would match exactly like `candidate`, if any. Saving such a
+ * rule would only duplicate every match, so the add and edit dialogs block it.
+ * `exceptId` lets an edited rule keep its own pattern.
+ */
+export function findDuplicateCustomRule(
+  rules: PiiCustomRule[],
+  candidate: Pick<PiiCustomRule, "mode" | "pattern">,
+  exceptId?: string | null,
+) {
+  const pattern = candidate.pattern.trim();
+  if (!pattern) return null;
+
+  return (
+    rules.find(
+      (rule) =>
+        rule.id !== exceptId &&
+        rule.mode === candidate.mode &&
+        rule.pattern.trim() === pattern,
+    ) ?? null
+  );
+}
+
 export function removeCustomRule(
   rules: PiiCustomRule[],
   ruleId: string,
