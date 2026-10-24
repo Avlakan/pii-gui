@@ -114,6 +114,7 @@ import {
   createInputTextSegments,
   createRedactedTextSegments,
   createRestoredTextSegments,
+  findDuplicateCustomRule,
   formatRedactedText,
   mergePiiMatches,
   removeCustomRule,
@@ -3002,6 +3003,18 @@ function App() {
         setNotice(copy.notices.customRegexInvalid);
         return;
       }
+    }
+
+    const duplicateRule = findDuplicateCustomRule(
+      customRules,
+      { mode: customRuleMode, pattern },
+      editingRuleId,
+    );
+    if (duplicateRule) {
+      setNotice(
+        copy.notices.customRuleDuplicate.replace("{name}", duplicateRule.name),
+      );
+      return;
     }
 
     setCustomRules((currentRules) =>
